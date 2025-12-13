@@ -1,0 +1,29 @@
+# Duplicity Backup Environment Variables
+# Managed by Ansible - DO NOT EDIT MANUALLY
+# Mode 0600 - Contains sensitive credentials
+
+{% if duplicity_encryption_method == 'symmetric' and duplicity_passphrase %}
+# Symmetric encryption passphrase
+export PASSPHRASE="{{ duplicity_passphrase }}"
+{% endif %}
+
+{% if duplicity_encryption_method == 'gpg' and duplicity_passphrase %}
+# GPG passphrase for signing
+export SIGN_PASSPHRASE="{{ duplicity_passphrase }}"
+{% endif %}
+
+{% if duplicity_aws_access_key_id %}
+# AWS/S3 Compatible Storage Credentials
+export AWS_ACCESS_KEY_ID="{{ duplicity_aws_access_key_id }}"
+export AWS_SECRET_ACCESS_KEY="{{ duplicity_aws_secret_access_key }}"
+{% endif %}
+
+{% if duplicity_s3_endpoint_url %}
+# S3-compatible endpoint URL (for MinIO, etc.)
+export S3_ENDPOINT_URL="{{ duplicity_s3_endpoint_url }}"
+{% endif %}
+
+{% if duplicity_sftp_password %}
+# SFTP/FTP Password
+export FTP_PASSWORD="{{ duplicity_sftp_password }}"
+{% endif %}

@@ -1,0 +1,22 @@
+# Zabbix Duplicity Backup Monitoring
+# Managed by Ansible - DO NOT EDIT MANUALLY
+
+# Check if backup ran successfully in the last N hours
+# Returns: Number of successful backups in the time period
+UserParameter=duplicity.backup.success_count,journalctl -t {{ duplicity_syslog_tag }} --since "{{ duplicity_zabbix_check_hours }} hours ago" --no-pager -o cat 2>/dev/null | grep -c "Backup completed successfully" || echo 0
+
+# Check if backup is currently running
+# Returns: 1 if running, 0 if not
+UserParameter=duplicity.backup.running,pgrep -f "duplicity.*{{ duplicity_destination | regex_escape }}" >/dev/null 2>&1 && echo 1 || echo 0
+
+# Get timestamp of last successful backup
+# Returns: Unix timestamp or 0 if no backup found
+UserParameter=duplicity.backup.last_success,journalctl -t {{ duplicity_syslog_tag }} --no-pager -o short-unix 2>/dev/null | grep "Backup completed successfully" | tail -1 | cut -d' ' -f1 | cut -d'.' -f1 || echo 0
+
+# Get number of backup errors in last 24 hours
+# Returns: Number of errors
+UserParameter=duplicity.backup.error_count,journalctl -t {{ duplicity_syslog_tag }} --since "24 hours ago" --no-pager -o cat 2>/dev/null | grep -c "\[ERROR\]" || echo 0
+
+# Get backup status (collection count)
+# Returns: Number of backup sets (full + incremental chains)
+UserParameter=duplicity.backup.collection_count,{{ _duplicity_status_script }} 2>/dev/null | grep -cE "^(Full|Incremental)" || echo 0

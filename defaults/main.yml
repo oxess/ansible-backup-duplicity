@@ -1,0 +1,182 @@
+---
+# ============================================================
+# Duplicity Backup Role - Default Variables
+# ============================================================
+
+# ------------------------------------------------------------
+# Basic Configuration
+# ------------------------------------------------------------
+
+# Enable/disable the backup role
+duplicity_enabled: true
+
+# User and group for running backups and owning files
+duplicity_user: "root"
+duplicity_group: "root"
+
+# Installation directories
+duplicity_script_dir: "/usr/local/bin"
+duplicity_config_dir: "/etc/duplicity"
+duplicity_log_dir: "/var/log/duplicity"
+duplicity_cache_dir: "/var/cache/duplicity"
+
+# Skip package installation (if managed elsewhere)
+duplicity_skip_install: false
+
+# Force reinstall of scripts even if they exist
+duplicity_force_reinstall: false
+
+# Custom duplicity binary path
+duplicity_binary: "/usr/bin/duplicity"
+
+# ------------------------------------------------------------
+# Backup Sources (REQUIRED - user should override)
+# ------------------------------------------------------------
+
+# List of directories/files to include in backup
+duplicity_include_paths:
+  - /etc
+  - /var/www
+
+# List of patterns to exclude (supports glob patterns)
+duplicity_exclude_patterns:
+  - "**/*.log"
+  - "**/*.tmp"
+  - "**/cache/**"
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/.git/**"
+
+# ------------------------------------------------------------
+# Backup Destination (REQUIRED - user must override)
+# ------------------------------------------------------------
+
+# Destination URL format depends on backend:
+#   S3:     s3://s3.amazonaws.com/bucket-name/path
+#   S3 compatible: s3://endpoint/bucket-name/path
+#   Local:  file:///path/to/backup
+#   SFTP:   sftp://user@host[:port]/path
+#   FTP:    ftp://user@host/path
+duplicity_destination: ""
+
+# ------------------------------------------------------------
+# Encryption Configuration
+# ------------------------------------------------------------
+
+# Encryption method: gpg, symmetric, none
+# - gpg: Use GPG key-based encryption (recommended)
+# - symmetric: Use passphrase-based symmetric encryption
+# - none: No encryption (not recommended)
+duplicity_encryption_method: "symmetric"
+
+# Passphrase for symmetric encryption or GPG key passphrase
+# Recommended: Use Ansible Vault for this variable
+duplicity_passphrase: ""
+
+# GPG key ID for asymmetric encryption (when method is 'gpg')
+duplicity_gpg_key: ""
+
+# GPG sign key (optional - for signing backups)
+duplicity_sign_key: ""
+
+# ------------------------------------------------------------
+# Backend Credentials
+# ------------------------------------------------------------
+
+# AWS/S3 Compatible Storage
+duplicity_aws_access_key_id: ""
+duplicity_aws_secret_access_key: ""
+duplicity_s3_endpoint_url: ""
+duplicity_s3_region_name: ""
+
+# SFTP/SSH (password-based, prefer SSH keys when possible)
+duplicity_sftp_password: ""
+
+# ------------------------------------------------------------
+# Backup Schedule (Cron)
+# ------------------------------------------------------------
+
+# Enable/disable cron job
+duplicity_cron_enabled: true
+
+# Cron schedule components
+duplicity_cron_minute: "0"
+duplicity_cron_hour: "3"
+duplicity_cron_day: "*"
+duplicity_cron_month: "*"
+duplicity_cron_weekday: "*"
+
+# Named schedule presets (overrides above if set)
+# Valid values: hourly, daily, weekly, monthly, or empty string
+duplicity_cron_schedule: ""
+
+# ------------------------------------------------------------
+# Backup Rotation/Retention
+# ------------------------------------------------------------
+
+# Remove backups older than (duplicity time format: 1W, 30D, 1M, etc.)
+duplicity_remove_older_than: "4W"
+
+# Force full backup if incremental chain older than
+duplicity_full_if_older_than: "1W"
+
+# Number of full backup chains to keep (0 = unlimited)
+duplicity_keep_full_chains: 2
+
+# ------------------------------------------------------------
+# Backup Options
+# ------------------------------------------------------------
+
+# Volume size in MB (for splitting large backups)
+duplicity_volsize: 200
+
+# Temporary directory for duplicity operations
+duplicity_tempdir: "/tmp"
+
+# Verbosity level (0-9, or: error, warning, notice, info, debug)
+duplicity_verbosity: "notice"
+
+# Additional duplicity options (list of strings)
+duplicity_extra_options: []
+
+# Maximum retries on failure
+duplicity_max_retries: 3
+duplicity_retry_delay: 300
+
+# Lock file to prevent concurrent runs
+duplicity_lock_file: "/var/run/duplicity-backup.lock"
+duplicity_lock_timeout: 3600
+
+# ------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------
+
+# Enable logging to file
+duplicity_log_enabled: true
+duplicity_log_file: "{{ duplicity_log_dir }}/backup.log"
+
+# Log to syslog
+duplicity_log_to_syslog: true
+duplicity_syslog_tag: "duplicity-backup"
+
+# Log retention in days
+duplicity_log_retention_days: 30
+
+# ------------------------------------------------------------
+# Zabbix Integration (Optional - Auto-detected)
+# ------------------------------------------------------------
+
+# Enable Zabbix monitoring: auto, true, false
+# - auto: Enable if Zabbix agent is detected
+# - true: Always enable (fail if Zabbix not installed)
+# - false: Never enable
+duplicity_zabbix_enabled: "auto"
+
+# Zabbix agent config directory
+duplicity_zabbix_agent_conf_dir: "/etc/zabbix/zabbix_agentd.conf.d"
+
+# Zabbix agent service name
+duplicity_zabbix_service: "zabbix-agent"
+
+# Hours to look back for successful backup check
+duplicity_zabbix_check_hours: 24

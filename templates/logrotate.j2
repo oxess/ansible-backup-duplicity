@@ -1,0 +1,12 @@
+# Logrotate configuration for Duplicity Backup
+# Managed by Ansible - DO NOT EDIT MANUALLY
+
+{{ duplicity_log_file }} {
+    daily
+    rotate {{ duplicity_log_retention_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 {{ duplicity_user }} {{ duplicity_group }}
+}

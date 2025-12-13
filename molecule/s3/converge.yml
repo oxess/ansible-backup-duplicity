@@ -1,0 +1,41 @@
+---
+- name: Converge
+  hosts: backup-server
+  become: true
+  gather_facts: true
+
+  vars:
+    # S3 destination using MinIO
+    # For MinIO, use boto3+s3:// prefix with bucket name
+    duplicity_destination: "boto3+s3://backup-test"
+    duplicity_passphrase: "test-passphrase-for-s3-testing"
+
+    # S3/MinIO credentials
+    duplicity_aws_access_key_id: "minioadmin"
+    duplicity_aws_secret_access_key: "minioadmin123"
+    duplicity_s3_endpoint_url: "http://minio:9000"
+
+    # Minimal include paths for testing
+    duplicity_include_paths:
+      - /etc/hostname
+      - /etc/hosts
+
+    # Exclude patterns
+    duplicity_exclude_patterns:
+      - "**/*.log"
+
+    # Disable cron for testing
+    duplicity_cron_enabled: false
+
+    # Disable Zabbix (not installed in test containers)
+    duplicity_zabbix_enabled: false
+
+    # Disable syslog for testing
+    duplicity_log_to_syslog: false
+
+    # Reduce retry delay for faster tests
+    duplicity_max_retries: 2
+    duplicity_retry_delay: 5
+
+  roles:
+    - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"

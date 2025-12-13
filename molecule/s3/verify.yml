@@ -1,0 +1,91 @@
+---
+- name: Verify
+  hosts: backup-server
+  become: true
+  gather_facts: true
+
+  vars:
+    duplicity_script_dir: "/usr/local/bin"
+    duplicity_config_dir: "/etc/duplicity"
+    duplicity_binary: "/usr/bin/duplicity"
+
+  tasks:
+    - name: Verify duplicity is installed
+      ansible.builtin.command:
+        cmd: "{{ duplicity_binary }} --version"
+      register: duplicity_version
+      changed_when: false
+
+    - name: Assert duplicity is installed
+      ansible.builtin.assert:
+        that:
+          - duplicity_version.rc == 0
+        fail_msg: "Duplicity is not installed"
+        success_msg: "Duplicity is installed: {{ duplicity_version.stdout_lines[0] | default('unknown') }}"
+
+    - name: Verify backup script exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_script_dir }}/duplicity-backup"
+      register: backup_script
+
+    - name: Assert backup script exists and is executable
+      ansible.builtin.assert:
+        that:
+          - backup_script.stat.exists
+          - backup_script.stat.executable
+        fail_msg: "Backup script is missing or not executable"
+        success_msg: "Backup script is present and executable"
+
+    - name: Verify environment file contains S3 credentials
+      ansible.builtin.command:
+        cmd: grep -q "AWS_ACCESS_KEY_ID" {{ duplicity_config_dir }}/backup.env
+      register: env_check
+      changed_when: false
+
+    - name: Assert environment file has AWS credentials
+      ansible.builtin.assert:
+        that:
+          - env_check.rc == 0
+        fail_msg: "Environment file does not contain AWS credentials"
+        success_msg: "Environment file contains AWS credentials"
+
+    - name: Run actual backup to MinIO
+      ansible.builtin.command:
+        cmd: "{{ duplicity_script_dir }}/duplicity-backup"
+      register: backup_result
+      changed_when: true
+
+    - name: Assert backup completed successfully
+      ansible.builtin.assert:
+        that:
+          - backup_result.rc == 0
+        fail_msg: "Backup failed: {{ backup_result.stderr | default('unknown error') }}"
+        success_msg: "Backup to MinIO S3 completed successfully"
+
+    - name: Check backup status
+      ansible.builtin.command:
+        cmd: "{{ duplicity_script_dir }}/duplicity-status"
+      register: status_result
+      changed_when: false
+
+    - name: Display backup status
+      ansible.builtin.debug:
+        var: status_result.stdout_lines
+
+    - name: Verify backup files exist in MinIO
+      ansible.builtin.assert:
+        that:
+          - "'Full' in status_result.stdout or 'Chain' in status_result.stdout"
+        fail_msg: "No backup found in MinIO"
+        success_msg: "Backup verified in MinIO S3 storage"
+
+    - name: Test restore functionality (dry-run)
+      ansible.builtin.command:
+        cmd: "{{ duplicity_script_dir }}/duplicity-restore restore --dry-run /etc/hostname /tmp/test-restore"
+      register: restore_test
+      changed_when: false
+      failed_when: false
+
+    - name: Display restore test output
+      ansible.builtin.debug:
+        var: restore_test.stdout_lines

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# Duplicity Backup Status Script
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+
+set -euo pipefail
+
+readonly ENV_FILE="{{ _duplicity_env_file }}"
+readonly DUPLICITY_BIN="{{ duplicity_binary }}"
+readonly CACHE_DIR="{{ duplicity_cache_dir }}"
+readonly DESTINATION="{{ duplicity_destination }}"
+
+# Load environment variables
+if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+fi
+
+# Build common options
+build_opts() {
+    local opts=""
+
+{% if duplicity_encryption_method == 'none' %}
+    opts+=" --no-encryption"
+{% elif duplicity_encryption_method == 'gpg' and duplicity_gpg_key %}
+    opts+=" --encrypt-key {{ duplicity_gpg_key }}"
+{% endif %}
+
+{% if _duplicity_detected_backend | trim == 's3' %}
+{% if duplicity_s3_endpoint_url %}
+    opts+=" --s3-endpoint-url {{ duplicity_s3_endpoint_url }}"
+{% if duplicity_s3_endpoint_url.startswith('http://') %}
+    opts+=" --s3-unencrypted-connection"
+{% endif %}
+{% endif %}
+{% if duplicity_s3_region_name %}
+    opts+=" --s3-region-name {{ duplicity_s3_region_name }}"
+{% endif %}
+{% endif %}
+
+    opts+=" --archive-dir=$CACHE_DIR"
+
+    echo "$opts"
+}
+
+main() {
+    local opts
+    opts=$(build_opts)
+
+    echo "Backup Collection Status"
+    echo "========================"
+    echo "Destination: $DESTINATION"
+    echo ""
+
+    # shellcheck disable=SC2086
+    $DUPLICITY_BIN collection-status $opts "$DESTINATION"
+}
+
+main "$@"

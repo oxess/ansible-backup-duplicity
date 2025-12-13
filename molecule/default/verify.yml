@@ -1,0 +1,154 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    duplicity_script_dir: "/usr/local/bin"
+    duplicity_config_dir: "/etc/duplicity"
+    duplicity_binary: "/usr/bin/duplicity"
+
+  tasks:
+    - name: Verify duplicity is installed
+      ansible.builtin.command:
+        cmd: "{{ duplicity_binary }} --version"
+      register: duplicity_version
+      changed_when: false
+
+    - name: Assert duplicity is installed
+      ansible.builtin.assert:
+        that:
+          - duplicity_version.rc == 0
+        fail_msg: "Duplicity is not installed"
+        success_msg: "Duplicity is installed: {{ duplicity_version.stdout_lines[0] | default('unknown') }}"
+
+    - name: Verify backup script exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_script_dir }}/duplicity-backup"
+      register: backup_script
+
+    - name: Assert backup script exists and is executable
+      ansible.builtin.assert:
+        that:
+          - backup_script.stat.exists
+          - backup_script.stat.executable
+          - backup_script.stat.mode == "0750"
+        fail_msg: "Backup script is missing or has incorrect permissions"
+        success_msg: "Backup script is present with correct permissions"
+
+    - name: Verify status script exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_script_dir }}/duplicity-status"
+      register: status_script
+
+    - name: Assert status script exists and is executable
+      ansible.builtin.assert:
+        that:
+          - status_script.stat.exists
+          - status_script.stat.executable
+        fail_msg: "Status script is missing or not executable"
+        success_msg: "Status script is present and executable"
+
+    - name: Verify restore script exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_script_dir }}/duplicity-restore"
+      register: restore_script
+
+    - name: Assert restore script exists and is executable
+      ansible.builtin.assert:
+        that:
+          - restore_script.stat.exists
+          - restore_script.stat.executable
+        fail_msg: "Restore script is missing or not executable"
+        success_msg: "Restore script is present and executable"
+
+    - name: Verify list script exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_script_dir }}/duplicity-list"
+      register: list_script
+
+    - name: Assert list script exists and is executable
+      ansible.builtin.assert:
+        that:
+          - list_script.stat.exists
+          - list_script.stat.executable
+        fail_msg: "List script is missing or not executable"
+        success_msg: "List script is present and executable"
+
+    - name: Verify environment file exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_config_dir }}/backup.env"
+      register: env_file
+
+    - name: Assert environment file exists with secure permissions
+      ansible.builtin.assert:
+        that:
+          - env_file.stat.exists
+          - env_file.stat.mode == "0600"
+        fail_msg: "Environment file is missing or has insecure permissions"
+        success_msg: "Environment file is present with secure permissions (0600)"
+
+    - name: Verify exclude file exists
+      ansible.builtin.stat:
+        path: "{{ duplicity_config_dir }}/exclude-patterns"
+      register: exclude_file
+
+    - name: Assert exclude file exists
+      ansible.builtin.assert:
+        that:
+          - exclude_file.stat.exists
+        fail_msg: "Exclude patterns file is missing"
+        success_msg: "Exclude patterns file is present"
+
+    - name: Verify config directory permissions
+      ansible.builtin.stat:
+        path: "{{ duplicity_config_dir }}"
+      register: config_dir
+
+    - name: Assert config directory has correct permissions
+      ansible.builtin.assert:
+        that:
+          - config_dir.stat.exists
+          - config_dir.stat.isdir
+          - config_dir.stat.mode == "0750"
+        fail_msg: "Config directory has incorrect permissions"
+        success_msg: "Config directory has correct permissions (0750)"
+
+    - name: Test backup script syntax
+      ansible.builtin.command:
+        cmd: "bash -n {{ duplicity_script_dir }}/duplicity-backup"
+      register: script_syntax
+      changed_when: false
+
+    - name: Assert backup script has valid syntax
+      ansible.builtin.assert:
+        that:
+          - script_syntax.rc == 0
+        fail_msg: "Backup script has syntax errors"
+        success_msg: "Backup script syntax is valid"
+
+    - name: Test restore script syntax
+      ansible.builtin.command:
+        cmd: "bash -n {{ duplicity_script_dir }}/duplicity-restore"
+      register: restore_syntax
+      changed_when: false
+
+    - name: Assert restore script has valid syntax
+      ansible.builtin.assert:
+        that:
+          - restore_syntax.rc == 0
+        fail_msg: "Restore script has syntax errors"
+        success_msg: "Restore script syntax is valid"
+
+    - name: Verify logrotate configuration exists
+      ansible.builtin.stat:
+        path: /etc/logrotate.d/duplicity-backup
+      register: logrotate_config
+
+    - name: Assert logrotate configuration exists
+      ansible.builtin.assert:
+        that:
+          - logrotate_config.stat.exists
+        fail_msg: "Logrotate configuration is missing"
+        success_msg: "Logrotate configuration is present"

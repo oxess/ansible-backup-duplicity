@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+#
+# Duplicity Backup Restore Script
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+
+set -euo pipefail
+
+readonly ENV_FILE="{{ _duplicity_env_file }}"
+readonly DUPLICITY_BIN="{{ duplicity_binary }}"
+readonly CACHE_DIR="{{ duplicity_cache_dir }}"
+readonly DESTINATION="{{ duplicity_destination }}"
+readonly DEFAULT_RESTORE_DIR="/restore"
+
+# Load environment variables
+if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+fi
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") COMMAND [OPTIONS] [ARGUMENTS]
+
+Duplicity Backup Restore Utility
+
+Commands:
+  list                          List all available backup versions
+  status                        Show backup collection status
+  verify                        Verify backup integrity
+  restore [PATH] [DEST]         Restore PATH to DEST (defaults: / to $DEFAULT_RESTORE_DIR)
+  file PATH [DEST]              Restore a specific file
+
+Options:
+  -t, --time TIME               Restore from specific time (e.g., '2024-01-15', '3D', '1W')
+  -n, --dry-run                 Show what would be restored without doing it
+  -f, --force                   Overwrite existing files
+  -h, --help                    Show this help message
+
+Time Formats:
+  YYYY-MM-DD                    Specific date (e.g., 2024-01-15)
+  YYYY-MM-DDTHH:MM:SS           Specific date and time
+  1D, 3D, 7D                    Days ago (1, 3, 7 days)
+  1W, 2W, 4W                    Weeks ago
+  1M, 3M                        Months ago
+
+Examples:
+  $(basename "$0") list
+  $(basename "$0") status
+  $(basename "$0") restore
+  $(basename "$0") restore /etc /tmp/etc-restore
+  $(basename "$0") restore --time 3D /var/www
+  $(basename "$0") restore --dry-run /etc
+  $(basename "$0") file /etc/nginx/nginx.conf /tmp/nginx.conf.bak
+  $(basename "$0") verify
+
+EOF
+}
+
+# Build common options
+build_opts() {
+    local opts=""
+
+{% if duplicity_encryption_method == 'none' %}
+    opts+=" --no-encryption"
+{% elif duplicity_encryption_method == 'gpg' and duplicity_gpg_key %}
+    opts+=" --encrypt-key {{ duplicity_gpg_key }}"
+{% endif %}
+
+{% if _duplicity_detected_backend | trim == 's3' %}
+{% if duplicity_s3_endpoint_url %}
+    opts+=" --s3-endpoint-url {{ duplicity_s3_endpoint_url }}"
+{% if duplicity_s3_endpoint_url.startswith('http://') %}
+    opts+=" --s3-unencrypted-connection"
+{% endif %}
+{% endif %}
+{% if duplicity_s3_region_name %}
+    opts+=" --s3-region-name {{ duplicity_s3_region_name }}"
+{% endif %}
+{% endif %}
+
+    opts+=" --archive-dir=$CACHE_DIR"
+
+    echo "$opts"
+}
+
+cmd_list() {
+    local opts
+    opts=$(build_opts)
+
+    echo "Available Backup Versions"
+    echo "========================="
+    echo "Destination: $DESTINATION"
+    echo ""
+
+    # shellcheck disable=SC2086
+    $DUPLICITY_BIN collection-status $opts "$DESTINATION"
+}
+
+cmd_status() {
+    cmd_list
+}
+
+cmd_verify() {
+    local opts
+    opts=$(build_opts)
+
+    echo "Verifying Backup Integrity"
+    echo "=========================="
+    echo ""
+
+    # shellcheck disable=SC2086
+    $DUPLICITY_BIN verify $opts "$DESTINATION" /
+}
+
+cmd_restore() {
+    local opts
+    opts=$(build_opts)
+
+    local time_opt=""
+    local dry_run=""
+    local force=""
+    local source_path="/"
+    local dest_path="$DEFAULT_RESTORE_DIR"
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--time)
+                time_opt="--time $2"
+                shift 2
+                ;;
+            -n|--dry-run)
+                dry_run="--dry-run"
+                shift
+                ;;
+            -f|--force)
+                force="--force"
+                shift
+                ;;
+            -*)
+                echo "Unknown option: $1" >&2
+                usage
+                exit 1
+                ;;
+            *)
+                if [[ -z "${source_path:-}" ]] || [[ "$source_path" == "/" ]]; then
+                    source_path="$1"
+                else
+                    dest_path="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    echo "Restore Operation"
+    echo "================="
+    echo "Source:      $DESTINATION"
+    echo "Path:        $source_path"
+    echo "Destination: $dest_path"
+    [[ -n "$time_opt" ]] && echo "Time:        ${time_opt#--time }"
+    [[ -n "$dry_run" ]] && echo "Mode:        DRY-RUN (no changes will be made)"
+    echo ""
+
+    # Create destination directory
+    if [[ -z "$dry_run" ]]; then
+        mkdir -p "$dest_path"
+    fi
+
+    # Run restore
+    if [[ "$source_path" == "/" ]]; then
+        # Full restore
+        # shellcheck disable=SC2086
+        $DUPLICITY_BIN restore $opts $time_opt $dry_run $force "$DESTINATION" "$dest_path"
+    else
+        # Partial restore
+        # shellcheck disable=SC2086
+        $DUPLICITY_BIN restore $opts $time_opt $dry_run $force \
+            --file-to-restore "${source_path#/}" \
+            "$DESTINATION" "$dest_path"
+    fi
+
+    echo ""
+    echo "Restore completed."
+}
+
+cmd_file() {
+    local opts
+    opts=$(build_opts)
+
+    local time_opt=""
+    local file_path=""
+    local dest_path=""
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--time)
+                time_opt="--time $2"
+                shift 2
+                ;;
+            -*)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+            *)
+                if [[ -z "$file_path" ]]; then
+                    file_path="$1"
+                else
+                    dest_path="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$file_path" ]]; then
+        echo "Error: File path is required" >&2
+        usage
+        exit 1
+    fi
+
+    # Default destination to current directory with original filename
+    if [[ -z "$dest_path" ]]; then
+        dest_path="./$(basename "$file_path")"
+    fi
+
+    echo "Restoring file: $file_path"
+    echo "Destination:    $dest_path"
+    echo ""
+
+    # shellcheck disable=SC2086
+    $DUPLICITY_BIN restore $opts $time_opt \
+        --file-to-restore "${file_path#/}" \
+        "$DESTINATION" "$dest_path"
+
+    echo ""
+    echo "File restored to: $dest_path"
+}
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        usage
+        exit 0
+    fi
+
+    local command="$1"
+    shift
+
+    case "$command" in
+        list)
+            cmd_list
+            ;;
+        status)
+            cmd_status
+            ;;
+        verify)
+            cmd_verify
+            ;;
+        restore)
+            cmd_restore "$@"
+            ;;
+        file)
+            cmd_file "$@"
+            ;;
+        -h|--help|help)
+            usage
+            ;;
+        *)
+            echo "Unknown command: $command" >&2
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

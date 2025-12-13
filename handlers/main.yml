@@ -1,0 +1,9 @@
+---
+# Duplicity Backup Role - Handlers
+
+- name: Restart zabbix-agent
+  ansible.builtin.systemd:
+    name: "{{ duplicity_zabbix_service }}"
+    state: restarted
+    enabled: true
+  when: _duplicity_zabbix_detected | default(false)

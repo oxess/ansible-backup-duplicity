@@ -1,0 +1,12 @@
+---
+# Duplicity Backup Role - Zabbix Integration
+# This file is only included when Zabbix agent is detected or explicitly enabled
+
+- name: Deploy Zabbix backup monitoring configuration
+  ansible.builtin.template:
+    src: zabbix-backup.conf.j2
+    dest: "{{ duplicity_zabbix_agent_conf_dir }}/duplicity-backup.conf"
+    owner: zabbix
+    group: zabbix
+    mode: "0640"
+  notify: Restart zabbix-agent

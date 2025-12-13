@@ -1,0 +1,14 @@
+---
+# Duplicity Backup Role - Cron Job Setup
+
+- name: Configure backup cron job
+  ansible.builtin.cron:
+    name: "duplicity-backup"
+    minute: "{{ _duplicity_cron_resolved.minute }}"
+    hour: "{{ _duplicity_cron_resolved.hour }}"
+    day: "{{ _duplicity_cron_resolved.day }}"
+    month: "{{ _duplicity_cron_resolved.month }}"
+    weekday: "{{ _duplicity_cron_resolved.weekday }}"
+    user: "{{ duplicity_user }}"
+    job: "{{ _duplicity_backup_script }} 2>&1 | logger -t {{ duplicity_syslog_tag }}"
+    state: present

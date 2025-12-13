@@ -1,0 +1,35 @@
+---
+# Duplicity Backup Role - Main Tasks
+
+- name: Include preflight checks
+  ansible.builtin.include_tasks: preflight.yml
+  tags:
+    - duplicity
+    - duplicity-preflight
+
+- name: Include installation tasks
+  ansible.builtin.include_tasks: install.yml
+  when: not duplicity_skip_install
+  tags:
+    - duplicity
+    - duplicity-install
+
+- name: Include configuration tasks
+  ansible.builtin.include_tasks: configure.yml
+  tags:
+    - duplicity
+    - duplicity-configure
+
+- name: Include cron configuration
+  ansible.builtin.include_tasks: cron.yml
+  when: duplicity_cron_enabled
+  tags:
+    - duplicity
+    - duplicity-cron
+
+- name: Include Zabbix integration
+  ansible.builtin.include_tasks: zabbix.yml
+  when: _duplicity_zabbix_detected | default(false)
+  tags:
+    - duplicity
+    - duplicity-zabbix

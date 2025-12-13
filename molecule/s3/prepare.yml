@@ -1,0 +1,30 @@
+---
+- name: Prepare MinIO
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Wait for MinIO to be ready
+      ansible.builtin.uri:
+        url: "http://localhost:9000/minio/health/live"
+        method: GET
+        status_code: 200
+      register: minio_health
+      until: minio_health.status == 200
+      retries: 30
+      delay: 2
+
+    - name: Install MinIO client (mc)
+      ansible.builtin.get_url:
+        url: https://dl.min.io/client/mc/release/linux-amd64/mc
+        dest: /tmp/mc
+        mode: "0755"
+
+    - name: Configure MinIO client
+      ansible.builtin.command:
+        cmd: /tmp/mc alias set myminio http://localhost:9000 minioadmin minioadmin123
+      changed_when: true
+
+    - name: Create test bucket
+      ansible.builtin.command:
+        cmd: /tmp/mc mb myminio/backup-test --ignore-existing
+      changed_when: true

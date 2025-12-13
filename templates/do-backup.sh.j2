@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+#
+# Duplicity Backup Script
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+
+set -euo pipefail
+
+# Configuration
+readonly LOCK_FILE="{{ duplicity_lock_file }}"
+readonly LOCK_TIMEOUT="{{ duplicity_lock_timeout }}"
+readonly LOG_FILE="{{ duplicity_log_file }}"
+readonly ENV_FILE="{{ _duplicity_env_file }}"
+readonly EXCLUDE_FILE="{{ _duplicity_exclude_file }}"
+readonly DUPLICITY_BIN="{{ duplicity_binary }}"
+readonly MAX_RETRIES="{{ duplicity_max_retries }}"
+readonly RETRY_DELAY="{{ duplicity_retry_delay }}"
+readonly CACHE_DIR="{{ duplicity_cache_dir }}"
+readonly DESTINATION="{{ duplicity_destination }}"
+
+# Exit codes
+readonly EXIT_SUCCESS=0
+readonly EXIT_LOCKED=1
+readonly EXIT_BACKUP_FAILED=2
+
+# Load environment variables
+if [[ -f "$ENV_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$ENV_FILE"
+fi
+
+# Logging function
+log() {
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+{% if duplicity_log_enabled %}
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE"
+{% endif %}
+{% if duplicity_log_to_syslog %}
+    logger -t "{{ duplicity_syslog_tag }}" "[$level] $message"
+{% endif %}
+    echo "[$timestamp] [$level] $message"
+}
+
+# Cleanup function
+cleanup() {
+    local exit_code=$?
+    log "INFO" "Cleanup - removing lock file"
+    rm -f "$LOCK_FILE"
+
+    if [[ $exit_code -eq $EXIT_SUCCESS ]]; then
+        log "INFO" "Backup completed successfully"
+    else
+        log "ERROR" "Backup failed with exit code: $exit_code"
+    fi
+
+    exit "$exit_code"
+}
+
+trap cleanup EXIT
+
+# Acquire lock with timeout
+acquire_lock() {
+    local start_time
+    start_time=$(date +%s)
+
+    while [[ -f "$LOCK_FILE" ]]; do
+        local lock_age
+        lock_age=$(($(date +%s) - $(stat -c %Y "$LOCK_FILE" 2>/dev/null || echo "$start_time")))
+
+        if [[ $lock_age -gt $LOCK_TIMEOUT ]]; then
+            log "WARN" "Stale lock file found (age: ${lock_age}s), removing"
+            rm -f "$LOCK_FILE"
+            break
+        fi
+
+        log "INFO" "Another backup is running, waiting..."
+        sleep 60
+
+        if [[ $(($(date +%s) - start_time)) -gt $LOCK_TIMEOUT ]]; then
+            log "ERROR" "Timeout waiting for lock"
+            exit $EXIT_LOCKED
+        fi
+    done
+
+    echo $$ > "$LOCK_FILE"
+    log "INFO" "Lock acquired (PID: $$)"
+}
+
+# Build duplicity common options
+build_common_opts() {
+    local opts=""
+
+    # Encryption flags
+{% if duplicity_encryption_method == 'none' %}
+    opts+=" --no-encryption"
+{% elif duplicity_encryption_method == 'gpg' and duplicity_gpg_key %}
+    opts+=" --encrypt-key {{ duplicity_gpg_key }}"
+{% if duplicity_sign_key %}
+    opts+=" --sign-key {{ duplicity_sign_key }}"
+{% endif %}
+{% endif %}
+
+    # S3 specific flags
+{% if _duplicity_detected_backend | trim == 's3' %}
+{% if duplicity_s3_endpoint_url %}
+    opts+=" --s3-endpoint-url {{ duplicity_s3_endpoint_url }}"
+{% if duplicity_s3_endpoint_url.startswith('http://') %}
+    opts+=" --s3-unencrypted-connection"
+{% endif %}
+{% endif %}
+{% if duplicity_s3_region_name %}
+    opts+=" --s3-region-name {{ duplicity_s3_region_name }}"
+{% endif %}
+{% endif %}
+
+    # Common options
+    opts+=" --verbosity={{ duplicity_verbosity }}"
+    opts+=" --archive-dir=$CACHE_DIR"
+    opts+=" --tempdir={{ duplicity_tempdir }}"
+
+{% for opt in duplicity_extra_options %}
+    opts+=" {{ opt }}"
+{% endfor %}
+
+    echo "$opts"
+}
+
+# Run duplicity with retry logic
+run_duplicity() {
+    local attempt=1
+    local common_opts
+    common_opts=$(build_common_opts)
+
+    while [[ $attempt -le $MAX_RETRIES ]]; do
+        log "INFO" "Backup attempt $attempt of $MAX_RETRIES"
+
+        # shellcheck disable=SC2086
+        if $DUPLICITY_BIN $common_opts "$@"; then
+            return 0
+        fi
+
+        log "WARN" "Backup attempt $attempt failed"
+        ((attempt++))
+
+        if [[ $attempt -le $MAX_RETRIES ]]; then
+            log "INFO" "Retrying in $RETRY_DELAY seconds..."
+            sleep "$RETRY_DELAY"
+        fi
+    done
+
+    return 1
+}
+
+# Main execution
+main() {
+    log "INFO" "Starting duplicity backup"
+    log "INFO" "Destination: $DESTINATION"
+
+    acquire_lock
+
+    # Remove old backups
+    log "INFO" "Removing backups older than {{ duplicity_remove_older_than }}"
+    if ! run_duplicity remove-older-than "{{ duplicity_remove_older_than }}" "$DESTINATION" --force; then
+        log "WARN" "Failed to remove old backups, continuing anyway"
+    fi
+
+{% if duplicity_keep_full_chains > 0 %}
+    # Remove all but N full chains
+    log "INFO" "Keeping only {{ duplicity_keep_full_chains }} full backup chains"
+    if ! run_duplicity remove-all-but-n-full "{{ duplicity_keep_full_chains }}" "$DESTINATION" --force; then
+        log "WARN" "Failed to remove extra full chains, continuing anyway"
+    fi
+{% endif %}
+
+    # Run backup
+    log "INFO" "Running incremental backup (full if older than {{ duplicity_full_if_older_than }})"
+
+    local backup_opts=""
+    backup_opts+=" --full-if-older-than {{ duplicity_full_if_older_than }}"
+    backup_opts+=" --volsize={{ duplicity_volsize }}"
+    backup_opts+=" --exclude-filelist $EXCLUDE_FILE"
+
+{% for path in duplicity_include_paths %}
+    backup_opts+=" --include '{{ path }}'"
+{% endfor %}
+
+    backup_opts+=" --exclude '**'"
+
+    # shellcheck disable=SC2086
+    # Use eval to properly handle quoted arguments
+    if ! eval "run_duplicity $backup_opts '/' '$DESTINATION'"; then
+        log "ERROR" "Backup failed after $MAX_RETRIES attempts"
+        exit $EXIT_BACKUP_FAILED
+    fi
+
+    log "INFO" "Backup completed successfully"
+}
+
+main "$@"

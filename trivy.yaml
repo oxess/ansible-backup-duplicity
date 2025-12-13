@@ -1,0 +1,13 @@
+---
+severity:
+  - CRITICAL
+  - HIGH
+  - MEDIUM
+
+exit-code: 1
+
+format: table
+
+misconfiguration:
+  scanners:
+    - config

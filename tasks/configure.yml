@@ -1,0 +1,72 @@
+---
+# Duplicity Backup Role - Configuration Deployment
+
+- name: Ensure configuration directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0750"
+  loop:
+    - "{{ duplicity_config_dir }}"
+    - "{{ duplicity_log_dir }}"
+    - "{{ duplicity_cache_dir }}"
+
+- name: Deploy environment file with credentials
+  ansible.builtin.template:
+    src: backup-env.j2
+    dest: "{{ _duplicity_env_file }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0600"
+  no_log: true
+
+- name: Deploy exclude patterns file
+  ansible.builtin.template:
+    src: exclude-patterns.j2
+    dest: "{{ _duplicity_exclude_file }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0640"
+
+- name: Deploy backup script
+  ansible.builtin.template:
+    src: do-backup.sh.j2
+    dest: "{{ _duplicity_backup_script }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0750"
+
+- name: Deploy status script
+  ansible.builtin.template:
+    src: status-backup.sh.j2
+    dest: "{{ _duplicity_status_script }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0750"
+
+- name: Deploy restore script
+  ansible.builtin.template:
+    src: restore-backup.sh.j2
+    dest: "{{ _duplicity_restore_script }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0750"
+
+- name: Deploy list script
+  ansible.builtin.template:
+    src: list-backup.sh.j2
+    dest: "{{ _duplicity_list_script }}"
+    owner: "{{ duplicity_user }}"
+    group: "{{ duplicity_group }}"
+    mode: "0750"
+
+- name: Deploy logrotate configuration
+  ansible.builtin.template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/duplicity-backup
+    owner: root
+    group: root
+    mode: "0644"
+  when: duplicity_log_enabled

@@ -1,0 +1,38 @@
+---
+galaxy_info:
+  role_name: duplicity
+  namespace: oxess
+  author: Mikolaj Jeziorny <contact@mikolaj-jeziorny.pl>
+  description: >
+    Ansible role for managing duplicity backups with support for multiple
+    destinations (S3, SFTP, local), flexible scheduling, GPG encryption,
+    and optional Zabbix monitoring with auto-detection.
+  license: MIT
+
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+
+  galaxy_tags:
+    - backup
+    - duplicity
+    - s3
+    - sftp
+    - encryption
+    - gpg
+    - zabbix
+    - monitoring
+    - cron
+    - disaster-recovery
+    - restore
+
+dependencies: []

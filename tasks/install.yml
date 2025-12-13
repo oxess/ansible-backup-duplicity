@@ -1,0 +1,23 @@
+---
+# Duplicity Backup Role - Package Installation
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+
+- name: Install duplicity and dependencies
+  ansible.builtin.package:
+    name: "{{ _duplicity_packages }}"
+    state: present
+
+- name: Verify duplicity installation
+  ansible.builtin.command:
+    cmd: "{{ duplicity_binary }} --version"
+  register: _duplicity_version
+  changed_when: false
+
+- name: Display duplicity version
+  ansible.builtin.debug:
+    msg: "Installed duplicity version: {{ _duplicity_version.stdout_lines[0] | default('unknown') }}"

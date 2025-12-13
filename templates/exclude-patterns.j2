@@ -1,0 +1,10 @@
+# Duplicity Backup Exclude Patterns
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+# This file contains patterns for files and directories to exclude from backup.
+# Patterns support glob syntax.
+# Lines starting with # are comments.
+
+{% for pattern in duplicity_exclude_patterns %}
+{{ pattern }}
+{% endfor %}

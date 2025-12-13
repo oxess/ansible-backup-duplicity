@@ -1,0 +1,88 @@
+---
+# Duplicity Backup Role - Preflight Checks
+
+- name: Validate role is enabled
+  ansible.builtin.fail:
+    msg: "duplicity_enabled is set to false, role will not execute"
+  when: not duplicity_enabled
+
+- name: Validate required variable - destination
+  ansible.builtin.fail:
+    msg: "duplicity_destination must be set to a valid backup destination URL"
+  when: duplicity_destination | length == 0
+
+- name: Validate required variable - include paths
+  ansible.builtin.fail:
+    msg: "duplicity_include_paths must contain at least one path to backup"
+  when: duplicity_include_paths | length == 0
+
+- name: Validate encryption - symmetric passphrase required
+  ansible.builtin.fail:
+    msg: "duplicity_passphrase is required when using symmetric encryption"
+  when:
+    - duplicity_encryption_method == 'symmetric'
+    - duplicity_passphrase | length == 0
+
+- name: Validate encryption - GPG key required
+  ansible.builtin.fail:
+    msg: "duplicity_gpg_key is required when using GPG encryption"
+  when:
+    - duplicity_encryption_method == 'gpg'
+    - duplicity_gpg_key | length == 0
+
+- name: Validate S3 credentials
+  ansible.builtin.fail:
+    msg: "AWS credentials (duplicity_aws_access_key_id and duplicity_aws_secret_access_key) are required for S3 backend"
+  when:
+    - _duplicity_detected_backend == 's3'
+    - duplicity_aws_access_key_id | length == 0 or duplicity_aws_secret_access_key | length == 0
+
+- name: Load OS-specific variables
+  ansible.builtin.include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+        - "{{ ansible_distribution }}.yml"
+        - "{{ ansible_os_family }}.yml"
+      paths:
+        - "{{ role_path }}/vars"
+      skip: true
+
+- name: Check if duplicity binary exists (when skip_install)
+  ansible.builtin.stat:
+    path: "{{ duplicity_binary }}"
+  register: _duplicity_binary_stat
+  when: duplicity_skip_install
+
+- name: Fail if duplicity not installed and skip_install is true
+  ansible.builtin.fail:
+    msg: "Duplicity binary not found at {{ duplicity_binary }}. Set duplicity_skip_install: false to install it."
+  when:
+    - duplicity_skip_install
+    - not (_duplicity_binary_stat.stat.exists | default(false))
+
+# Zabbix Auto-Detection
+- name: Gather service facts for Zabbix detection
+  ansible.builtin.service_facts:
+  when: duplicity_zabbix_enabled == 'auto' or duplicity_zabbix_enabled | bool
+
+- name: Check if Zabbix agent config directory exists
+  ansible.builtin.stat:
+    path: "{{ duplicity_zabbix_agent_conf_dir }}"
+  register: _zabbix_conf_dir_stat
+  when: duplicity_zabbix_enabled == 'auto' or duplicity_zabbix_enabled | bool
+
+- name: Detect Zabbix agent presence
+  ansible.builtin.set_fact:
+    _duplicity_zabbix_detected: >-
+      {{
+        (duplicity_zabbix_enabled | bool and duplicity_zabbix_enabled != 'auto') or
+        (duplicity_zabbix_enabled == 'auto' and (
+          (duplicity_zabbix_service ~ '.service') in (ansible_facts.services | default({})) or
+          (_zabbix_conf_dir_stat.stat.exists | default(false))
+        ))
+      }}
+
+- name: Debug Zabbix detection result
+  ansible.builtin.debug:
+    msg: "Zabbix agent detected: {{ _duplicity_zabbix_detected }}"
+  when: duplicity_zabbix_enabled == 'auto'

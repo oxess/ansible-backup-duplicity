@@ -1,0 +1,9 @@
+---
+# Debian/Ubuntu specific variables
+
+_duplicity_packages:
+  - duplicity
+  - python3-boto
+  - python3-boto3
+  - python3-paramiko
+  - gnupg

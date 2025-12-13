@@ -1,0 +1,101 @@
+---
+# ============================================================
+# Duplicity Backup Role - Computed Variables
+# Do not override these directly - use defaults instead
+# ============================================================
+
+# ------------------------------------------------------------
+# Backend Detection
+# ------------------------------------------------------------
+
+# Detect backend type from destination URL
+# Handles formats: s3://, boto3+s3://, file://, sftp://, etc.
+_duplicity_detected_backend: >-
+  {%- set url = duplicity_destination | default('file://') -%}
+  {%- if url.startswith('boto3+s3://') or url.startswith('s3+http') or url.startswith('s3://') -%}
+  s3
+  {%- elif url.startswith('sftp://') or url.startswith('scp://') -%}
+  sftp
+  {%- elif url.startswith('file://') or url.startswith('/') -%}
+  file
+  {%- elif url.startswith('ftp://') -%}
+  ftp
+  {%- else -%}
+  {{ url | regex_search('^([a-z0-9]+)://') | regex_replace('://$', '') | default('file') }}
+  {%- endif -%}
+
+# ------------------------------------------------------------
+# Cron Schedule Presets
+# ------------------------------------------------------------
+
+_duplicity_cron_presets:
+  hourly:
+    minute: "0"
+    hour: "*"
+    day: "*"
+    month: "*"
+    weekday: "*"
+  daily:
+    minute: "0"
+    hour: "3"
+    day: "*"
+    month: "*"
+    weekday: "*"
+  weekly:
+    minute: "0"
+    hour: "3"
+    day: "*"
+    month: "*"
+    weekday: "0"
+  monthly:
+    minute: "0"
+    hour: "3"
+    day: "1"
+    month: "*"
+    weekday: "*"
+
+# Resolved cron schedule
+_duplicity_cron_resolved: >-
+  {{
+    _duplicity_cron_presets[duplicity_cron_schedule]
+    if duplicity_cron_schedule in _duplicity_cron_presets
+    else {
+      'minute': duplicity_cron_minute,
+      'hour': duplicity_cron_hour,
+      'day': duplicity_cron_day,
+      'month': duplicity_cron_month,
+      'weekday': duplicity_cron_weekday
+    }
+  }}
+
+# ------------------------------------------------------------
+# Script Paths
+# ------------------------------------------------------------
+
+_duplicity_backup_script: "{{ duplicity_script_dir }}/duplicity-backup"
+_duplicity_status_script: "{{ duplicity_script_dir }}/duplicity-status"
+_duplicity_restore_script: "{{ duplicity_script_dir }}/duplicity-restore"
+_duplicity_list_script: "{{ duplicity_script_dir }}/duplicity-list"
+_duplicity_env_file: "{{ duplicity_config_dir }}/backup.env"
+_duplicity_exclude_file: "{{ duplicity_config_dir }}/exclude-patterns"
+
+# ------------------------------------------------------------
+# Encryption Flags
+# ------------------------------------------------------------
+
+_duplicity_encryption_flags: >-
+  {% if duplicity_encryption_method == 'none' -%}
+  --no-encryption
+  {%- elif duplicity_encryption_method == 'gpg' and duplicity_gpg_key -%}
+  --encrypt-key {{ duplicity_gpg_key }}{% if duplicity_sign_key %} --sign-key {{ duplicity_sign_key }}{% endif %}
+  {%- endif %}
+
+# ------------------------------------------------------------
+# S3 Flags
+# ------------------------------------------------------------
+
+_duplicity_s3_flags: >-
+  {%- if _duplicity_detected_backend | trim == 's3' -%}
+  {%- if duplicity_s3_endpoint_url %}--s3-endpoint-url {{ duplicity_s3_endpoint_url }}{% endif %}
+  {%- if duplicity_s3_region_name | default('') %} --s3-region-name {{ duplicity_s3_region_name }}{% endif %}
+  {%- endif -%}

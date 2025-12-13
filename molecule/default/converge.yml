@@ -1,0 +1,31 @@
+---
+- name: Converge
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    # Test with local file destination
+    duplicity_destination: "file:///tmp/backup-test"
+    duplicity_passphrase: "test-passphrase-for-molecule-testing"
+
+    # Minimal include paths for testing
+    duplicity_include_paths:
+      - /etc/hostname
+      - /etc/hosts
+
+    # Exclude patterns
+    duplicity_exclude_patterns:
+      - "**/*.log"
+
+    # Disable cron for testing
+    duplicity_cron_enabled: false
+
+    # Disable Zabbix (not installed in test containers)
+    duplicity_zabbix_enabled: false
+
+    # Disable syslog for testing
+    duplicity_log_to_syslog: false
+
+  roles:
+    - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
