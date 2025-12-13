@@ -32,7 +32,7 @@ galaxy_info:
     - zabbix
     - monitoring
     - cron
-    - disaster-recovery
+    - disasterrecovery
     - restore
 
 dependencies: []

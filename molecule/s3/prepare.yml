@@ -3,6 +3,7 @@
   hosts: localhost
   gather_facts: false
   tasks:
+    # checkov:skip=CKV2_ANSIBLE_1:Local MinIO container for testing does not support HTTPS
     - name: Wait for MinIO to be ready
       ansible.builtin.uri:
         url: "http://localhost:9000/minio/health/live"
