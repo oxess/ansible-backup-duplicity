@@ -30,8 +30,8 @@ platforms:
       - /run
       - /tmp
 
-  - name: debian-bullseye
-    image: geerlingguy/docker-debian11-ansible:latest
+  - name: debian-bookworm
+    image: geerlingguy/docker-debian12-ansible:latest
     pre_build_image: true
     privileged: true
     cgroupns_mode: host
@@ -42,8 +42,8 @@ platforms:
       - /run
       - /tmp
 
-  - name: debian-bookworm
-    image: geerlingguy/docker-debian12-ansible:latest
+  - name: debian-trixie
+    image: geerlingguy/docker-debian13-ansible:latest
     pre_build_image: true
     privileged: true
     cgroupns_mode: host

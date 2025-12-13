@@ -69,8 +69,8 @@ jobs:
         distro:
           - ubuntu-jammy
           - ubuntu-noble
-          - debian-bullseye
           - debian-bookworm
+          - debian-trixie
 
     steps:
       - name: Checkout repository
