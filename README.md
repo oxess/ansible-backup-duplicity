@@ -80,6 +80,321 @@ ansible-galaxy install git+https://github.com/oxess/ansible-backup-duplicity.git
           - /var/www
 ```
 
+## AWS S3 Permissions
+
+When using S3 as a backup destination, Duplicity requires specific permissions to operate. Below is the minimal IAM policy needed:
+
+### Minimal IAM Policy
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket-name"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::your-bucket-name/your-backup-path/*"
+    }
+  ]
+}
+```
+
+### Required Permissions Explained
+
+- **`s3:ListBucket`**: Required to list existing backup sets and verify backup chains
+- **`s3:GetBucketLocation`**: Needed to determine the bucket's region for proper API calls
+- **`s3:GetObject`**: Required to download backup archives during restore operations and to verify existing backups
+- **`s3:PutObject`**: Required to upload new backup archives
+- **`s3:DeleteObject`**: Required for cleanup operations when removing old backups according to retention policies
+
+### IAM User Setup Example
+
+1. Create an IAM user specifically for backups:
+   ```bash
+   aws iam create-user --user-name duplicity-backup
+   ```
+
+2. Create and attach the policy:
+   ```bash
+   aws iam create-policy --policy-name DuplicityBackupPolicy --policy-document file://duplicity-policy.json
+   aws iam attach-user-policy --user-name duplicity-backup --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/DuplicityBackupPolicy
+   ```
+
+3. Create access keys:
+   ```bash
+   aws iam create-access-key --user-name duplicity-backup
+   ```
+
+### S3-Compatible Storage (MinIO, Wasabi, etc.)
+
+For S3-compatible storage providers, use the same permissions structure but with the appropriate endpoint:
+
+```yaml
+- hosts: servers
+  roles:
+    - role: oxess.duplicity
+      vars:
+        duplicity_destination: "s3://your-minio-server/bucket/backups"
+        duplicity_s3_endpoint_url: "https://your-minio-server:9000"
+        duplicity_aws_access_key_id: "{{ vault_minio_access_key }}"
+        duplicity_aws_secret_access_key: "{{ vault_minio_secret_key }}"
+```
+
+## Using Ansible Vault for Sensitive Data
+
+Ansible Vault should be used to protect sensitive information like passwords, API keys, and passphrases. Here's a step-by-step guide:
+
+### Step 1: Create a Vault File
+
+Create an encrypted vault file to store your sensitive variables:
+
+```bash
+ansible-vault create group_vars/all/vault.yml
+```
+
+You'll be prompted to create a vault password. Remember this password as you'll need it to decrypt the file.
+
+### Step 2: Add Sensitive Variables
+
+Edit the vault file and add your sensitive data:
+
+```bash
+ansible-vault edit group_vars/all/vault.yml
+```
+
+Add the following variables (example for AWS S3):
+
+```yaml
+# Encryption passphrase
+vault_backup_passphrase: "your-strong-backup-passphrase-here"
+
+# AWS Credentials
+vault_aws_access_key_id: "AKIAIOSFODNN7EXAMPLE"
+vault_aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+# For SFTP (if needed)
+vault_sftp_password: "your-sftp-password"
+
+# For GPG encryption (if using)
+vault_gpg_passphrase: "your-gpg-key-passphrase"
+```
+
+### Step 3: Create Your Playbook
+
+Create a playbook that references the vault variables:
+
+```yaml
+---
+# playbook.yml
+- hosts: backup_servers
+  become: yes
+  roles:
+    - role: oxess.duplicity
+      vars:
+        # S3 destination using vault variables
+        duplicity_destination: "s3://s3.amazonaws.com/your-bucket-name/backups/{{ inventory_hostname }}"
+
+        # Use vault-encrypted variables
+        duplicity_passphrase: "{{ vault_backup_passphrase }}"
+        duplicity_aws_access_key_id: "{{ vault_aws_access_key_id }}"
+        duplicity_aws_secret_access_key: "{{ vault_aws_secret_access_key }}"
+
+        # Backup configuration
+        duplicity_include_paths:
+          - /etc
+          - /var/www
+          - /home
+
+        # Schedule daily backups at 2 AM
+        duplicity_cron_schedule: "daily"
+        duplicity_cron_hour: "2"
+        duplicity_cron_minute: "0"
+
+        # Retention: keep 4 weeks of backups
+        duplicity_remove_older_than: "4W"
+        duplicity_full_if_older_than: "1W"
+```
+
+### Step 4: Run the Playbook
+
+Execute the playbook with vault password:
+
+```bash
+# Option 1: Enter vault password interactively
+ansible-playbook -i inventory playbook.yml --ask-vault-pass
+
+# Option 2: Use a vault password file
+echo "your-vault-password" > .vault_pass
+chmod 600 .vault_pass
+ansible-playbook -i inventory playbook.yml --vault-password-file .vault_pass
+
+# Option 3: Set environment variable (for CI/CD)
+export ANSIBLE_VAULT_PASSWORD_FILE=.vault_pass
+ansible-playbook -i inventory playbook.yml
+```
+
+### Complete AWS S3 Example with Vault
+
+1. **Create vault with AWS credentials:**
+
+```bash
+ansible-vault create group_vars/all/vault.yml
+```
+
+Content:
+```yaml
+vault_backup_passphrase: "MySecureBackup#Pass2024!"
+vault_aws_access_key_id: "AKIAIOSFODNN7EXAMPLE"
+vault_aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+vault_aws_bucket: "your-bucket-name"
+```
+
+2. **Create the playbook (`backup-setup.yml`):**
+
+```yaml
+---
+- name: Configure Duplicity backups to AWS S3
+  hosts: production
+  become: yes
+  vars:
+    backup_bucket: "{{ vault_aws_bucket }}"
+    backup_prefix: "{{ ansible_hostname }}/{{ ansible_date_time.year }}"
+
+  roles:
+    - role: oxess.duplicity
+      vars:
+        # S3 destination with dynamic path
+        duplicity_destination: "s3://s3.amazonaws.com/{{ backup_bucket }}/{{ backup_prefix }}"
+
+        # Encryption
+        duplicity_encryption_method: "symmetric"
+        duplicity_passphrase: "{{ vault_backup_passphrase }}"
+
+        # AWS credentials from vault
+        duplicity_aws_access_key_id: "{{ vault_aws_access_key_id }}"
+        duplicity_aws_secret_access_key: "{{ vault_aws_secret_access_key }}"
+
+        # What to backup
+        duplicity_include_paths:
+          - /etc
+          - /var/www
+          - /home
+          - /var/lib/mysql
+
+        duplicity_exclude_patterns:
+          - "**/cache/**"
+          - "**/*.log"
+          - "**/tmp/**"
+          - "**/.git/**"
+
+        # Schedule: Daily at 3 AM
+        duplicity_cron_enabled: true
+        duplicity_cron_schedule: "daily"
+        duplicity_cron_hour: "3"
+        duplicity_cron_minute: "0"
+
+        # Retention policy
+        duplicity_remove_older_than: "30D"
+        duplicity_full_if_older_than: "7D"
+        duplicity_keep_full_chains: 3
+
+        # Performance
+        duplicity_volsize: 500
+
+        # Monitoring
+        duplicity_zabbix_enabled: "auto"
+        duplicity_log_enabled: true
+```
+
+3. **Deploy the configuration:**
+
+```bash
+# Test run (check mode)
+ansible-playbook -i inventory backup-setup.yml --ask-vault-pass --check
+
+# Actual deployment
+ansible-playbook -i inventory backup-setup.yml --ask-vault-pass
+
+# Verify the backup is working
+ansible all -i inventory -m command -a "sudo duplicity-status" --ask-vault-pass
+```
+
+### Vault Best Practices
+
+1. **Never commit unencrypted vault files** - Add to `.gitignore`:
+   ```
+   *.vault
+   .vault_pass
+   vault_password.txt
+   ```
+
+2. **Use separate vaults for different environments:**
+   ```
+   group_vars/production/vault.yml
+   group_vars/staging/vault.yml
+   group_vars/development/vault.yml
+   ```
+
+3. **Rotate credentials regularly** - Re-encrypt vault files:
+   ```bash
+   ansible-vault rekey group_vars/all/vault.yml
+   ```
+
+4. **View vault contents without editing:**
+   ```bash
+   ansible-vault view group_vars/all/vault.yml
+   ```
+
+5. **Encrypt existing files:**
+   ```bash
+   ansible-vault encrypt existing_vars.yml
+   ```
+
+6. **Decrypt temporarily for editing:**
+   ```bash
+   ansible-vault decrypt vault.yml
+   # Edit the file
+   ansible-vault encrypt vault.yml
+   ```
+
+### CI/CD Integration
+
+For automated deployments, store the vault password securely:
+
+**GitHub Actions example:**
+```yaml
+- name: Run Ansible Playbook
+  env:
+    ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+  run: |
+    echo "$ANSIBLE_VAULT_PASSWORD" > .vault_pass
+    ansible-playbook -i inventory playbook.yml --vault-password-file .vault_pass
+    rm .vault_pass
+```
+
+**GitLab CI example:**
+```yaml
+deploy:
+  script:
+    - echo "$ANSIBLE_VAULT_PASSWORD" > .vault_pass
+    - ansible-playbook -i inventory playbook.yml --vault-password-file .vault_pass
+    - rm .vault_pass
+  variables:
+    ANSIBLE_VAULT_PASSWORD: $CI_ANSIBLE_VAULT_PASSWORD
+```
+
 ## Role Variables
 
 ### Required Variables
