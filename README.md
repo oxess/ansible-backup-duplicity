@@ -16,7 +16,7 @@ Ansible role for managing [Duplicity](http://duplicity.nongnu.org/) backups with
 
 - Ansible 2.12 or higher
 - Supported operating systems:
-  - Debian 11 (Bullseye), 12 (Bookworm)
+  - Debian 12 (Bookworm), 13 (Trixie)
   - Ubuntu 20.04 (Focal), 22.04 (Jammy), 24.04 (Noble)
 
 ## Installation

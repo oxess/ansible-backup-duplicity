@@ -7,7 +7,7 @@ driver:
 
 platforms:
   - name: backup-server
-    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    image: geerlingguy/docker-debian13-ansible:latest
     pre_build_image: true
     privileged: true
     cgroupns_mode: host
