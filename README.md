@@ -57,10 +57,11 @@ ansible-galaxy install git+https://github.com/oxess/ansible-backup-duplicity.git
   roles:
     - role: oxess.duplicity
       vars:
-        duplicity_destination: "s3://s3.amazonaws.com/my-bucket/backups"
+        duplicity_destination: "boto3+s3://my-bucket/backups"
         duplicity_passphrase: "{{ vault_backup_passphrase }}"
         duplicity_aws_access_key_id: "{{ vault_aws_key }}"
         duplicity_aws_secret_access_key: "{{ vault_aws_secret }}"
+        duplicity_s3_region_name: "eu-central-1"  # Your bucket's region
         duplicity_include_paths:
           - /etc
           - /var/www
@@ -146,7 +147,7 @@ For S3-compatible storage providers, use the same permissions structure but with
   roles:
     - role: oxess.duplicity
       vars:
-        duplicity_destination: "s3://your-minio-server/bucket/backups"
+        duplicity_destination: "boto3+s3://bucket/backups"
         duplicity_s3_endpoint_url: "https://your-minio-server:9000"
         duplicity_aws_access_key_id: "{{ vault_minio_access_key }}"
         duplicity_aws_secret_access_key: "{{ vault_minio_secret_key }}"
@@ -204,7 +205,7 @@ Create a playbook that references the vault variables:
     - role: oxess.duplicity
       vars:
         # S3 destination using vault variables
-        duplicity_destination: "s3://s3.amazonaws.com/your-bucket-name/backups/{{ inventory_hostname }}"
+        duplicity_destination: "boto3+s3://your-bucket-name/backups/{{ inventory_hostname }}"
 
         # Use vault-encrypted variables
         duplicity_passphrase: "{{ vault_backup_passphrase }}"
@@ -276,7 +277,7 @@ vault_aws_bucket: "your-bucket-name"
     - role: oxess.duplicity
       vars:
         # S3 destination with dynamic path
-        duplicity_destination: "s3://s3.amazonaws.com/{{ backup_bucket }}/{{ backup_prefix }}"
+        duplicity_destination: "boto3+s3://{{ backup_bucket }}/{{ backup_prefix }}"
 
         # Encryption
         duplicity_encryption_method: "symmetric"
@@ -606,6 +607,100 @@ Run Molecule tests:
 pip install molecule molecule-plugins[docker]
 molecule test
 ```
+
+## Troubleshooting
+
+### S3 403 Forbidden on HeadBucket Operation
+
+**Symptom:**
+```
+Attempt of list Nr. 1 failed. ClientError: An error occurred (403) when calling the HeadBucket operation: Forbidden
+Attempt of list Nr. 2 failed. AttributeError: 'NoneType' object has no attribute 'objects'
+```
+
+**Cause:** Duplicity 3.0+ with the boto3 backend requires a different URL format. The hostname (`s3.amazonaws.com`) should NOT be included in the destination URL.
+
+**Solution:** Change your `duplicity_destination` from the old format to the new format:
+
+```yaml
+# Wrong (old format with hostname)
+duplicity_destination: "boto3+s3://s3.amazonaws.com/my-bucket/path"
+duplicity_destination: "s3://s3.amazonaws.com/my-bucket/path"
+
+# Correct (new format - bucket name only)
+duplicity_destination: "boto3+s3://my-bucket/path"
+```
+
+Also ensure `duplicity_s3_region_name` is set to your bucket's region:
+
+```yaml
+duplicity_s3_region_name: "eu-central-1"
+```
+
+**Verification:** After fixing, run `duplicity-status` on the server to confirm the backup collection is accessible.
+
+### S3 Credentials Not Working
+
+**Symptom:** 401 Unauthorized or credentials-related errors.
+
+**Diagnosis:** Test credentials directly on the server:
+
+```bash
+source /etc/duplicity/backup.env
+python3 -c "
+import boto3
+s3 = boto3.client('s3')
+print(s3.head_bucket(Bucket='your-bucket-name'))
+"
+```
+
+**Common causes:**
+1. Wrong `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`
+2. IAM user lacks required permissions (see [AWS S3 Permissions](#aws-s3-permissions))
+3. Bucket policy denying access
+
+### Backup Script Fails Silently
+
+**Diagnosis:** Check logs:
+
+```bash
+# Check syslog
+grep duplicity /var/log/syslog
+
+# Check dedicated log file (if enabled)
+cat /var/log/duplicity/backup.log
+
+# Run backup manually with verbose output
+duplicity-backup
+```
+
+### Region Mismatch Errors
+
+**Symptom:** Redirects or region-related errors.
+
+**Solution:** Always specify the region explicitly:
+
+```yaml
+duplicity_s3_region_name: "us-east-1"  # or your bucket's region
+```
+
+Find your bucket's region:
+```bash
+aws s3api get-bucket-location --bucket your-bucket-name
+```
+
+### Permission Denied on Scripts
+
+**Symptom:** Cannot execute `duplicity-backup` or other scripts.
+
+**Solution:** Scripts should be owned by root with mode 0750:
+
+```bash
+ls -la /etc/duplicity/scripts/
+# Should show: -rwxr-x--- root root
+```
+
+Re-run the Ansible role to fix permissions.
 
 ## License
 
